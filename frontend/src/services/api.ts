@@ -1,4 +1,13 @@
-const API_BASE_URL = '/api';
+const getApiBaseUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl && envUrl.trim()) {
+    const cleanUrl = envUrl.trim().replace(/\/+$/, '');
+    return cleanUrl.endsWith('/api') ? cleanUrl : `${cleanUrl}/api`;
+  }
+  return '/api';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 export interface UserSkill {
   id: number;
@@ -152,45 +161,86 @@ const getAuthHeaders = () => {
   const token = localStorage.getItem('skillpath_token');
   return {
     'Content-Type': 'application/json',
+    'Bypass-Tunnel-Reminder': 'true',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 };
+
+// Safe JSON parser to prevent "Unexpected end of JSON input" errors
+async function safeJsonResponse(res: Response, defaultErrorMsg: string) {
+  let bodyData: any = null;
+  const contentType = res.headers.get('content-type') || '';
+  
+  if (contentType.includes('application/json')) {
+    try {
+      bodyData = await res.json();
+    } catch {
+      bodyData = null;
+    }
+  } else {
+    try {
+      const text = await res.text();
+      if (text) bodyData = { detail: text };
+    } catch {
+      bodyData = null;
+    }
+  }
+
+  if (!res.ok) {
+    let msg = bodyData?.detail || bodyData?.message || bodyData?.error;
+    if (typeof msg === 'object') msg = JSON.stringify(msg);
+    if (!msg || typeof msg !== 'string') {
+      if (res.status === 400) msg = 'An account with this email already exists or invalid data submitted.';
+      else if (res.status === 401) msg = 'Invalid email or password.';
+      else if (res.status === 404) msg = 'Resource not found.';
+      else msg = defaultErrorMsg;
+    }
+    throw new Error(msg);
+  }
+
+  return bodyData;
+}
 
 // API Methods
 export const api = {
   // Auth
   async register(data: { name: string; email: string; password: string }) {
-    const res = await fetch(`${API_BASE_URL}/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || 'Registration failed');
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Bypass-Tunnel-Reminder': 'true'
+        },
+        body: JSON.stringify(data),
+      });
+      return await safeJsonResponse(res, 'Registration failed. An account with this email may already exist.');
+    } catch (err: any) {
+      throw new Error(err.message || 'Registration failed.');
     }
-    return res.json();
   },
 
   async login(data: { email: string; password: string }) {
-    const res = await fetch(`${API_BASE_URL}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || 'Login failed');
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Bypass-Tunnel-Reminder': 'true'
+        },
+        body: JSON.stringify(data),
+      });
+      return await safeJsonResponse(res, 'Invalid email or password.');
+    } catch (err: any) {
+      throw new Error(err.message || 'Login failed.');
     }
-    return res.json();
   },
 
   async getMe(): Promise<User> {
     const res = await fetch(`${API_BASE_URL}/auth/me`, {
       headers: getAuthHeaders(),
     });
-    if (!res.ok) throw new Error('Unauthorized');
-    return res.json();
+    return await safeJsonResponse(res, 'Unauthorized');
   },
 
   // Onboarding & Profile
@@ -200,11 +250,7 @@ export const api = {
       headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || 'Onboarding failed');
-    }
-    return res.json();
+    return await safeJsonResponse(res, 'Onboarding failed');
   },
 
   // Skills & Roles
@@ -215,14 +261,14 @@ export const api = {
     const res = await fetch(`${API_BASE_URL}/skills?${params.toString()}`, {
       headers: getAuthHeaders(),
     });
-    return res.json();
+    return await safeJsonResponse(res, 'Failed to fetch skills');
   },
 
   async getTargetRoles(): Promise<TargetRole[]> {
     const res = await fetch(`${API_BASE_URL}/jobs/roles`, {
       headers: getAuthHeaders(),
     });
-    return res.json();
+    return await safeJsonResponse(res, 'Failed to fetch target roles');
   },
 
   async analyzeJobDescription(job_description: string, target_role_id?: number, job_title?: string): Promise<JobAnalysis> {
@@ -231,11 +277,7 @@ export const api = {
       headers: getAuthHeaders(),
       body: JSON.stringify({ job_description, target_role_id, job_title }),
     });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || 'Job analysis failed');
-    }
-    return res.json();
+    return await safeJsonResponse(res, 'Job description analysis failed');
   },
 
   // Resume Upload
@@ -247,15 +289,12 @@ export const api = {
     const res = await fetch(`${API_BASE_URL}/resume/upload`, {
       method: 'POST',
       headers: {
+        'Bypass-Tunnel-Reminder': 'true',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: formData,
     });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || 'Resume upload failed');
-    }
-    return res.json();
+    return await safeJsonResponse(res, 'Please upload a valid PDF resume under 10 MB.');
   },
 
   async confirmResumeSkills(skills: Array<{ name: string; proficiency_level: number }>): Promise<User> {
@@ -264,11 +303,7 @@ export const api = {
       headers: getAuthHeaders(),
       body: JSON.stringify({ skills }),
     });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || 'Confirming skills failed');
-    }
-    return res.json();
+    return await safeJsonResponse(res, 'Confirming skills failed');
   },
 
   // Skill Gap Analysis
@@ -276,11 +311,7 @@ export const api = {
     const res = await fetch(`${API_BASE_URL}/skill-gap`, {
       headers: getAuthHeaders(),
     });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || 'Skill gap analysis failed');
-    }
-    return res.json();
+    return await safeJsonResponse(res, 'Skill gap analysis failed');
   },
 
   // Projects
@@ -292,21 +323,21 @@ export const api = {
     const res = await fetch(`${API_BASE_URL}/projects?${params.toString()}`, {
       headers: getAuthHeaders(),
     });
-    return res.json();
+    return await safeJsonResponse(res, 'Failed to fetch projects');
   },
 
   async getRecommendedProjects(): Promise<Project[]> {
     const res = await fetch(`${API_BASE_URL}/projects/recommendations`, {
       headers: getAuthHeaders(),
     });
-    return res.json();
+    return await safeJsonResponse(res, 'Failed to fetch recommended projects');
   },
 
   async getProjectById(id: number): Promise<Project> {
     const res = await fetch(`${API_BASE_URL}/projects/${id}`, {
       headers: getAuthHeaders(),
     });
-    return res.json();
+    return await safeJsonResponse(res, 'Project not found');
   },
 
   // Roadmaps
@@ -314,11 +345,7 @@ export const api = {
     const res = await fetch(`${API_BASE_URL}/roadmaps/current`, {
       headers: getAuthHeaders(),
     });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || 'Failed to fetch roadmap');
-    }
-    return res.json();
+    return await safeJsonResponse(res, 'Failed to fetch roadmap');
   },
 
   async generateRoadmap(weekly_hours: number = 10): Promise<Roadmap> {
@@ -327,11 +354,7 @@ export const api = {
       headers: getAuthHeaders(),
       body: JSON.stringify({ weekly_hours }),
     });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || 'Failed to generate roadmap');
-    }
-    return res.json();
+    return await safeJsonResponse(res, 'Failed to generate roadmap');
   },
 
   async updateStepStatus(step_id: number, status: 'not_started' | 'in_progress' | 'completed') {
@@ -340,7 +363,7 @@ export const api = {
       headers: getAuthHeaders(),
       body: JSON.stringify({ status }),
     });
-    return res.json();
+    return await safeJsonResponse(res, 'Failed to update step status');
   },
 
   // Progress
@@ -348,7 +371,7 @@ export const api = {
     const res = await fetch(`${API_BASE_URL}/progress`, {
       headers: getAuthHeaders(),
     });
-    return res.json();
+    return await safeJsonResponse(res, 'Failed to fetch progress');
   },
 
   async updateSkillProgress(skill_id: number, progress_percentage: number, status: string) {
@@ -357,7 +380,7 @@ export const api = {
       headers: getAuthHeaders(),
       body: JSON.stringify({ progress_percentage, status }),
     });
-    return res.json();
+    return await safeJsonResponse(res, 'Failed to update skill progress');
   },
 
   // AI Assistant Chat
@@ -367,10 +390,6 @@ export const api = {
       headers: getAuthHeaders(),
       body: JSON.stringify({ messages }),
     });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || 'Assistant chat failed');
-    }
-    return res.json();
+    return await safeJsonResponse(res, 'Assistant chat failed');
   },
 };

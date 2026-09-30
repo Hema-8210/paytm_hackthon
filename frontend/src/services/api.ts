@@ -190,9 +190,9 @@ async function safeJsonResponse(res: Response, defaultErrorMsg: string) {
     let msg = bodyData?.detail || bodyData?.message || bodyData?.error;
     if (typeof msg === 'object') msg = JSON.stringify(msg);
     if (!msg || typeof msg !== 'string') {
-      if (res.status === 400) msg = 'An account with this email already exists or invalid data submitted.';
+      if (res.status === 400) msg = 'An account with this email address already exists. Please Sign In instead or Reset Password.';
       else if (res.status === 401) msg = 'Invalid email or password.';
-      else if (res.status === 404) msg = 'Resource not found.';
+      else if (res.status === 404) msg = 'No account found with this email address.';
       else msg = defaultErrorMsg;
     }
     throw new Error(msg);
@@ -205,35 +205,51 @@ async function safeJsonResponse(res: Response, defaultErrorMsg: string) {
 export const api = {
   // Auth
   async register(data: { name: string; email: string; password: string }) {
-    try {
-      const res = await fetch(`${API_BASE_URL}/auth/register`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Bypass-Tunnel-Reminder': 'true'
-        },
-        body: JSON.stringify(data),
-      });
-      return await safeJsonResponse(res, 'Registration failed. An account with this email may already exist.');
-    } catch (err: any) {
-      throw new Error(err.message || 'Registration failed.');
-    }
+    const res = await fetch(`${API_BASE_URL}/auth/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Bypass-Tunnel-Reminder': 'true'
+      },
+      body: JSON.stringify(data),
+    });
+    return await safeJsonResponse(res, 'Registration failed. An account with this email may already exist.');
   },
 
   async login(data: { email: string; password: string }) {
-    try {
-      const res = await fetch(`${API_BASE_URL}/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Bypass-Tunnel-Reminder': 'true'
-        },
-        body: JSON.stringify(data),
-      });
-      return await safeJsonResponse(res, 'Invalid email or password.');
-    } catch (err: any) {
-      throw new Error(err.message || 'Login failed.');
-    }
+    const res = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Bypass-Tunnel-Reminder': 'true'
+      },
+      body: JSON.stringify(data),
+    });
+    return await safeJsonResponse(res, 'Invalid email or password.');
+  },
+
+  async forgotPassword(email: string) {
+    const res = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Bypass-Tunnel-Reminder': 'true'
+      },
+      body: JSON.stringify({ email }),
+    });
+    return await safeJsonResponse(res, 'Failed to process password reset request.');
+  },
+
+  async resetPassword(data: { email: string; new_password: string }) {
+    const res = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Bypass-Tunnel-Reminder': 'true'
+      },
+      body: JSON.stringify(data),
+    });
+    return await safeJsonResponse(res, 'Failed to reset password.');
   },
 
   async getMe(): Promise<User> {

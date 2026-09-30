@@ -26,7 +26,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess })
       // Direct to onboarding after register
       navigate('/onboarding');
     } catch (err: any) {
-      setError(err.message || 'Registration failed. Please try again.');
+      setError(err.message || 'Registration failed. An account with this email address may already exist.');
     } finally {
       setLoading(false);
     }
@@ -50,9 +50,19 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess })
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-slate-900 border border-slate-800 py-8 px-4 shadow-2xl rounded-2xl sm:px-10">
           {error && (
-            <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-400 text-xs flex items-center gap-3">
-              <AlertCircle className="w-5 h-5 shrink-0" />
-              <span>{error}</span>
+            <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-400 text-xs space-y-2">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 shrink-0" />
+                <span className="font-semibold">{error}</span>
+              </div>
+              {error.includes('already exists') && (
+                <div className="pt-2 border-t border-rose-500/20 flex items-center justify-between text-slate-200">
+                  <span>Already registered?</span>
+                  <Link to="/login" className="font-bold underline text-indigo-400 hover:text-indigo-300">
+                    Sign In Now →
+                  </Link>
+                </div>
+              )}
             </div>
           )}
 

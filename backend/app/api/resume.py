@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.models.models import User, Resume, Skill, UserSkill
@@ -6,6 +6,7 @@ from app.schemas.schemas import ResumeAnalysisResponse, ConfirmSkillsRequest, Us
 from app.api.deps import get_current_user
 from app.ai.resume_analyzer import analyze_resume_file
 from app.ai.embeddings import normalize_skill_name
+from app.core.config import settings
 
 router = APIRouter(prefix="/resume", tags=["Resume Analyzer"])
 
@@ -15,12 +16,21 @@ async def upload_and_analyze_resume(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Invalid file format. Please upload a valid PDF document.")
+    filename_lower = file.filename.lower()
+    
+    # Strictly validate PDF file type and extension
+    if not filename_lower.endswith(".pdf") or (file.content_type and "pdf" not in file.content_type.lower()):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please upload a valid PDF resume under 10 MB."
+        )
         
     contents = await file.read()
     if len(contents) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="File size exceeds 10 MB limit.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please upload a valid PDF resume under 10 MB."
+        )
 
     try:
         analysis = analyze_resume_file(contents, file.filename)
@@ -49,8 +59,16 @@ async def upload_and_analyze_resume(
             "sections": analysis["sections"],
             "extracted_skills": analysis["extracted_skills"]
         }
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Unable to analyze resume. {str(e)}")
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(ve)
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="SkillPath is temporarily unable to analyze your resume. Please upload a valid PDF resume under 10 MB."
+        )
 
 @router.post("/confirm-skills", response_model=UserOut)
 def confirm_resume_skills(
